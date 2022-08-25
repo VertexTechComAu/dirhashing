@@ -17,9 +17,10 @@ import (
 )
 
 // Make generate hash of all files and they paths for specified directory.
-func Make(dir string, hashType string) (string, error) {
-	var endHash string
-	//var fileHash string
+func Make(dir string) (string, error) {
+	var fileHash_sha256 string
+	var fileHash_md5 string
+	buf := make([]byte, 1024*1024)
 
 	bigErr := filepath.Walk(dir,
 		func(path string, info os.FileInfo, err error) error {
@@ -27,18 +28,83 @@ func Make(dir string, hashType string) (string, error) {
 				return err
 			}
 
-			/*
-			endHash, err = hashData(endHash, hashType)
-			if err != nil {
-				return err
-			}
-			*/
-
 			if !info.IsDir() {
-				/*pathHash, err := hashData(path, hashType)
+			
+				//combined sha256 and md5 file hash
+				fileHash_sha256 = ""
+				fileHash_md5 = ""
+				
+					// Handle hashing big files.
+		// Source: https://stackoverflow.com/q/60328216/1722542
+
+				f, err := os.Open(path)
 				if err != nil {
-					return err
-				}*/
+					//return err
+					if os.IsPermission(err) {
+						fmt.Printf("%s,AccessDenied-InvalidPermissions,,,\n", path)
+					} else {
+						fmt.Printf("%s,UnknownFileIssue,,,\n", path)
+					}
+				} else {
+
+
+					defer func() {
+						_ = f.Close()
+					}()
+
+					
+					sha256h, err := selectHash("sha256")
+					if err != nil {
+						return err
+					}
+					
+					md5h, err := selectHash("md5")
+					if err != nil {
+						return err
+					}
+
+					for {
+						bytesRead, err := f.Read(buf)
+						if err != nil {
+							if err != io.EOF {
+								return err
+							}
+							_, err = sha256h.Write(buf[:bytesRead])
+							if err != nil {
+								return err
+							}
+							_, err = md5h.Write(buf[:bytesRead])
+							if err != nil {
+								return err
+							}
+							break
+						}
+						_, err = sha256h.Write(buf[:bytesRead])
+						if err != nil {
+							return err
+						}
+						_, err = md5h.Write(buf[:bytesRead])
+						if err != nil {
+							return err
+						}
+					}
+					
+
+					fileHash_sha256 = hex.EncodeToString(sha256h.Sum(nil))
+					fileHash_md5 = hex.EncodeToString(md5h.Sum(nil))
+					
+					fmt.Printf("%s,%s,%s,%d,%s\n", path, fileHash_sha256, fileHash_md5, info.Size(), info.ModTime().Format("2006-01-02 15:04:05 UTC"))
+				}
+
+			}
+			return nil
+		})
+			//
+			
+			
+			
+//previous code used the generic has function, but this is slower as it reads the file twice			
+/*
 
 				fileHash_sha256, err := hashFile(path, "sha256")
 				if err != nil {
@@ -65,18 +131,12 @@ func Make(dir string, hashType string) (string, error) {
 					//fileHash = fileHash_sha256
 					//endHash = endHash + pathHash + fileHash
 				}
-			}
-			return nil
-		})
+*/				
+				
+			
+		
 
-	if bigErr != nil {
-		return "", bigErr
-	}
-	endHash, err := hashData(endHash, hashType)
-	if err != nil {
-		return "", err
-	}
-	return endHash, err
+	return "", bigErr
 }
 
 func selectHash(hashType string) (hash.Hash, error) {
@@ -106,6 +166,9 @@ func hashData(data string, hashType string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+
+
+//general hashfile
 func hashFile(path string, hashType string) (string, error) {
 	// Handle hashing big files.
 	// Source: https://stackoverflow.com/q/60328216/1722542
@@ -172,6 +235,6 @@ func main() {
     
     fmt.Println("path, fileHash_sha256, fileHash_md5, filesize, modified_time")    
     
-    Make(dir, "sha256")
+    Make(dir)
     
 }
